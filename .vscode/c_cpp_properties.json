@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/includes/atomic_queue/include/atomic_queue"
+            ],
+            "defines": [],
+            "macFrameworkPath": [
+                "/Library/Developer/CommandLineTools/SDKs/MacOSX12.1.sdk/System/Library/Frameworks"
+            ],
+            "compilerPath": "/usr/bin/clang++",
+            "cStandard": "c11",
+            "intelliSenseMode": "macos-clang-x64",
+            "compilerArgs": [
+                "-I",
+                "/Users/joshua/.brew/Cellar/asio/1.26.0/include",
+                "-std=c++11"
+            ],
+            "cppStandard": "c++11"
+        }
+    ],
+    "version": 4
+}

@@ -1,0 +1,3 @@
+[submodule "includes/atomic_queue"]
+	path = includes/atomic_queue
+	url = https://github.com/max0x7ba/atomic_queue.git
