@@ -287,6 +287,57 @@ ObjectStructure make_ObjectStructure(boost::property_tree::ptree &child) {
     }
 }
 
+struct ItemStructure {
+    ushort type;
+    std::string id;
+    ProjectileStructure projectile;
+    int num_projectiles;
+    int tier;
+    uint8_t slot_type;
+    float rate_of_fire;
+    uint32_t feed_power;
+    uint8_t bag_type;
+    uint8_t mp_cost;
+    double cooldown;
+    float radius;
+    uint8_t fame_bonus;
+    bool soulbound;
+    bool usable;
+    bool consumable;
+    bool potion;
+    int quickslot_allowed_maxstack;
+    std::unordered_set<std::pair<std::string, float>> activate_type_list;
+};
+
+ItemStructure make_ItemStructure(boost::property_tree::ptree &child) {
+    ItemStructure is;
+    is.type = std::stoi(child.get_optional<std::string>("<xmlattr>.type").get_value_or("0x0"), nullptr, 0);
+    is.id = child.get_optional<std::string>("<xmlattr>.id").get_value_or("");
+    is.tier = child.get_optional<int>("Tier").get_value_or(-1); //fix once enum
+    is.slot_type = child.get_optional<uint8_t>("SlotType").get_value_or(0);
+    is.rate_of_fire = child.get_optional<float>("RateOfFire").get_value_or(1);
+    is.feed_power = child.get_optional<uint32_t>("feedPower").get_value_or(0);
+    is.bag_type = child.get_optional<uint8_t>("BagType").get_value_or(0);
+    is.mp_cost = child.get_optional<uint8_t>("MpCost").get_value_or(0);
+    is.cooldown = child.get_optional<double>("Cooldown").get_value_or(0);
+    is.fame_bonus = child.get_optional<uint8_t>("FameBonus").get_value_or(0);
+    is.soulbound = child.find("Soulbound") != child.not_found();
+    is.usable = child.find("Usable") != child.not_found();
+    is.consumable = child.find("Consumable") != child.not_found();
+    is.num_projectiles = child.get_optional<int>("NumProjectiles").get_value_or(0);
+    auto projectile = child.get_child_optional("Projectile");
+    if (projectile) 
+        is.projectile = make_ProjectileStructure(projectile.get());
+    is.quickslot_allowed_maxstack = child.get_child_optional("QuickslotAllowed").map([](boost::property_tree::ptree child_child) {
+        child_child.get_optional<int>("maxstack");
+    }).get_value_or(6);
+    auto activate = child.get_child_optional("Activate");
+    if (activate) 
+        for (auto &elem : activate.get()) {
+            is.activate_type_list.insert({elem.second.data(), elem.second.get_optional<float>("<xmlattr>.radius").get_value_or(0)});
+        }
+}
+
 struct PacketStructure {
     uint8_t id;
 };
