@@ -1,8 +1,9 @@
 #include <iostream>
 #include <vector>
 #include <stdexcept>
-#include <unordered_map>
-#include <unordered_set>
+#include <map>
+#include <set>
+#include <chrono>
 
 //#define ASIO_STANDALONE
 #include <boost/asio.hpp>
@@ -114,6 +115,8 @@ struct GroundStructure {
     bool sink;
     ushort min_damage;
     ushort max_damage;
+
+    bool operator < (const GroundStructure &other) const { return id < other.id; }
 };
 
 GroundStructure make_GroundStructure(boost::property_tree::ptree& child) {
@@ -146,7 +149,9 @@ struct ProjectileStructure {
     bool armor_piercing;
     bool multi_hit;
     bool passes_cover;
-    std::unordered_map<std::string, float> status_effects;
+    std::map<std::string, float> status_effects;
+
+    bool operator < (const ProjectileStructure &other) const { return id < other.id; }
 };
 
 ProjectileStructure make_ProjectileStructure(boost::property_tree::ptree& child) {
@@ -217,10 +222,12 @@ struct ObjectStructure {
     bool usable;
     bool soulbound;
     ushort mp_cost;
-    std::unordered_set<ProjectileStructure> projectiles;
+    std::set<ProjectileStructure> projectiles;
     bool invulnerable;
     bool invincible;
     PlayerStats player_stats;
+
+    bool operator < (const ObjectStructure &other) const { return id < other.id; }
 };
 
 ObjectStructure make_ObjectStructure(boost::property_tree::ptree &child) {
@@ -228,7 +235,7 @@ ObjectStructure make_ObjectStructure(boost::property_tree::ptree &child) {
     os.type = std::stoi(child.get_optional<std::string>("<xmlattr>.type").get_value_or("0x0"), nullptr, 0);
     os.id = child.get_optional<std::string>("<xmlattr>.id").get_value_or("");
     os.class_ = child.get_optional<std::string>("Class").get_value_or("GameObject");
-    os.max_hit_points = std::stoi(child.get_optional<std::string>("<xmlattr>.type").get_value_or("0x0"), nullptr, 0);
+    os.max_hit_points = std::stoi(child.get_optional<std::string>("MaxHitPoints").get_value_or("0x0"), nullptr, 0);
     os.xp_mult = child.get_optional<float>("XpMult").get_value_or(0);
     os.static_ = child.find("Static") != child.not_found();
     os.occupy_square = child.find("OccupySquare") != child.not_found();
@@ -260,34 +267,35 @@ ObjectStructure make_ObjectStructure(boost::property_tree::ptree &child) {
         }
     }
     if (os.player) {
-        os.player_stats.max_hp = child.get_child_optional("MaxHitPoints").map([](boost::property_tree::ptree &child_child) {
-            child_child.get_optional<int>("max");
+        os.player_stats.max_hp = child.get_child_optional("MaxHitPoints").flat_map([](boost::property_tree::ptree &child_child) {
+            return child_child.get_optional<int>("max");
         }).get_value_or(0);
-        os.player_stats.max_mp = child.get_child_optional("MaxMagicPoints").map([](boost::property_tree::ptree &child_child) {
-            child_child.get_optional<int>("max");
+        os.player_stats.max_mp = child.get_child_optional("MaxMagicPoints").flat_map([](boost::property_tree::ptree &child_child) {
+            return child_child.get_optional<int>("max");
         }).get_value_or(0);
-        os.player_stats.attack = child.get_child_optional("Attack").map([](boost::property_tree::ptree &child_child) {
-            child_child.get_optional<int>("max");
+        os.player_stats.attack = child.get_child_optional("Attack").flat_map([](boost::property_tree::ptree &child_child) {
+            return child_child.get_optional<int>("max");
         }).get_value_or(0);
-        os.player_stats.defense = child.get_child_optional("Defense").map([](boost::property_tree::ptree &child_child) {
-            child_child.get_optional<int>("max");
+        os.player_stats.defense = child.get_child_optional("Defense").flat_map([](boost::property_tree::ptree &child_child) {
+            return child_child.get_optional<int>("max");
         }).get_value_or(0);
-        os.player_stats.speed = child.get_child_optional("Speed").map([](boost::property_tree::ptree &child_child) {
-            child_child.get_optional<int>("max");
+        os.player_stats.speed = child.get_child_optional("Speed").flat_map([](boost::property_tree::ptree &child_child) {
+            return child_child.get_optional<int>("max");
         }).get_value_or(0);
-        os.player_stats.dexterity = child.get_child_optional("Dexterity").map([](boost::property_tree::ptree &child_child) {
-            child_child.get_optional<int>("max");
+        os.player_stats.dexterity = child.get_child_optional("Dexterity").flat_map([](boost::property_tree::ptree &child_child) {
+            return child_child.get_optional<int>("max");
         }).get_value_or(0);
-        os.player_stats.hp_regen = child.get_child_optional("HpRegen").map([](boost::property_tree::ptree &child_child) {
-            child_child.get_optional<int>("max");
+        os.player_stats.hp_regen = child.get_child_optional("HpRegen").flat_map([](boost::property_tree::ptree &child_child) {
+            return child_child.get_optional<int>("max");
         }).get_value_or(0);
-        os.player_stats.mp_regen = child.get_child_optional("MpRegen").map([](boost::property_tree::ptree &child_child) {
-            child_child.get_optional<int>("max");
+        os.player_stats.mp_regen = child.get_child_optional("MpRegen").flat_map([](boost::property_tree::ptree &child_child) {
+            return child_child.get_optional<int>("max");
         }).get_value_or(0);
     }
+    return os;
 }
 
-struct ItemStructure {
+struct ObjectItemStructure {
     ushort type;
     std::string id;
     ProjectileStructure projectile;
@@ -306,11 +314,13 @@ struct ItemStructure {
     bool consumable;
     bool potion;
     int quickslot_allowed_maxstack;
-    std::unordered_set<std::pair<std::string, float>> activate_type_list;
+    std::set<std::pair<std::string, float>> activate_type_list;
+
+    bool operator < (const ObjectItemStructure &other) const { return id < other.id; }
 };
 
-ItemStructure make_ItemStructure(boost::property_tree::ptree &child) {
-    ItemStructure is;
+ObjectItemStructure make_ObjectItemStructure(boost::property_tree::ptree &child) {
+    ObjectItemStructure is;
     is.type = std::stoi(child.get_optional<std::string>("<xmlattr>.type").get_value_or("0x0"), nullptr, 0);
     is.id = child.get_optional<std::string>("<xmlattr>.id").get_value_or("");
     is.tier = child.get_optional<int>("Tier").get_value_or(-1); //fix once enum
@@ -328,33 +338,52 @@ ItemStructure make_ItemStructure(boost::property_tree::ptree &child) {
     auto projectile = child.get_child_optional("Projectile");
     if (projectile) 
         is.projectile = make_ProjectileStructure(projectile.get());
-    is.quickslot_allowed_maxstack = child.get_child_optional("QuickslotAllowed").map([](boost::property_tree::ptree child_child) {
-        child_child.get_optional<int>("maxstack");
+    is.quickslot_allowed_maxstack = child.get_child_optional("QuickslotAllowed").flat_map([](boost::property_tree::ptree child_child) {
+        return child_child.get_optional<int>("maxstack");
     }).get_value_or(6);
     auto activate = child.get_child_optional("Activate");
     if (activate) 
         for (auto &elem : activate.get()) {
             is.activate_type_list.insert({elem.second.data(), elem.second.get_optional<float>("<xmlattr>.radius").get_value_or(0)});
         }
+    return is;
 }
 
 struct PacketStructure {
-    uint8_t id;
+    uint8_t packet_id;
+    std::string packet_name;
 };
 
-PacketStructure make_PacketStructure(boost::property_tree::ptree &ptree) {
-    return PacketStructure();
-    //no
+PacketStructure make_PacketStructure(boost::property_tree::ptree &child) {
+    PacketStructure ps;
+    ps.packet_id = child.get_optional<uint8_t>("PacketId").get_value_or(0);
+    ps.packet_name = child.get_optional<std::string>("PacketName").get_value_or("");
+    return ps;
 }
 
 int main()
 {
     boost::property_tree::ptree ptree;
     boost::property_tree::xml_parser::read_xml("test.xml", ptree);
+
+    auto start = std::chrono::steady_clock::now();
     for (auto &child : ptree.get_child("All").get_child("GroundTypes")) {
         make_GroundStructure(child.second);
     }
-    make_ProjectileStructure(ptree.get_child("All").get_child("Projectile"));
+    for (auto &child : ptree.get_child("All").get_child("Objects")) {
+        make_ObjectStructure(child.second);
+    }
+    for (auto &child : ptree.get_child("All").get_child("Objects")) {
+        if (child.second.find("Item") != child.second.not_found()) 
+            make_ObjectItemStructure(child.second);
+    }
+    for (auto &child : ptree.get_child("All").get_child("Packets")) {
+        make_PacketStructure(child.second);
+    }
+    auto finish = std::chrono::steady_clock::now();
+    double elapsed_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(finish - start).count();
+    std::cout << elapsed_seconds << '\n';
+    //make_ProjectileStructure(ptree.get_child("All").get_child("Projectile"));
 
     asio::io_context context;
     signal(SIGINT, [](int) {
