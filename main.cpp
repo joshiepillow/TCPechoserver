@@ -1,12 +1,18 @@
 #include <iostream>
+#include <vector>
+#include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 
-#define ASIO_STANDALONE
-#include <asio.hpp>
+//#define ASIO_STANDALONE
+#include <boost/asio.hpp>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/xml_parser.hpp>
 
 #include <atomic_queue/atomic_queue.h>
 
-using queue = atomic_queue::AtomicQueue2<std::string, 1024>;
-
+using queue = atomic_queue::AtomicQueue2<std::vector<uint8_t>, 1024>;
+using namespace boost;
 std::vector<asio::ip::tcp::socket*> sockets;
 std::vector<asio::ip::tcp::acceptor*> acceptors;
 
@@ -16,29 +22,14 @@ queue s2p_queue;
 queue p2s_queue;
 queue p2c_queue;
 
-/*void read(asio::ip::tcp::socket& socket) {
-    socket.async_read_some(asio::buffer(buffer.data(), buffer.size()),
-        [&](std::error_code ec, std::size_t length) {
-            if (!ec) {
-                std::cout << "\n\nRead " << length << " bytes.\n\n";
-
-                for (int i = 0; i < length; i++) {
-                    std::cout << buffer[i];
-                } 
-
-                read(socket);
-            } else {
-                std::cout << ec << std::endl;
-            }
-        }
-    );
-}*/
-
 std::string make_string(asio::streambuf& streambuf)
 {
     return {asio::buffers_begin(streambuf.data()), asio::buffers_end(streambuf.data())};
 }
-
+std::vector<uint8_t> make_uint8vector(asio::streambuf& streambuf)
+{
+    return {asio::buffers_begin(streambuf.data()), asio::buffers_end(streambuf.data())};
+}
 uint32_t make_uint32(asio::streambuf& streambuf) {
     std::istream is(&streambuf);
     return ((uint32_t) is.get() << 24) 
@@ -51,22 +42,25 @@ void readBuf(asio::ip::tcp::socket &socket, queue &out) {
     asio::streambuf read_buffer;
 
     while (1) {
+        //Read first 4 bytes
         asio::read(socket, read_buffer, asio::transfer_exactly(4));
-        std::string length_s = make_string(read_buffer);
+        std::vector<uint8_t> length_v = make_uint8vector(read_buffer);
         uint32_t length = make_uint32(read_buffer);
         std::cout << "Header: " << std::hex << (int) length << "\n";
 
         asio::read(socket, read_buffer, asio::transfer_exactly(length - 4));
         std::string s = make_string(read_buffer);
+        std::vector<uint8_t> v = make_uint8vector(read_buffer);
         read_buffer.consume(length); // Remove data that was read.
         std::cout << "Read: " << s << std::endl;
-        out.push(length_s + s);
+        length_v.insert(length_v.end(), s.begin(), s.end());
+        out.push(length_v);
     }
 }
 
 void writeBuf(asio::ip::tcp::socket &socket, queue &in) {
     while (1) {
-        std::string s = in.pop();
+        std::vector<uint8_t> s = in.pop();
         asio::write(socket, asio::buffer(s));
     }
 }
@@ -112,33 +106,206 @@ void server(asio::io_context &context) {
     p2s.join();
 }
 
+struct GroundStructure {
+    std::string id;
+    ushort type;
+    bool no_walk;
+    float speed;
+    bool sink;
+    ushort min_damage;
+    ushort max_damage;
+};
+
+GroundStructure make_GroundStructure(boost::property_tree::ptree& child) {
+    GroundStructure ts;
+    ts.type = std::stoi(child.get_optional<std::string>("<xmlattr>.type").get_value_or("0x0"), nullptr, 0);
+    ts.id = child.get_optional<std::string>("<xmlattr>.id").get_value_or("");
+    ts.no_walk = child.find("NoWalk") != child.not_found();
+    ts.speed = child.get_optional<float>("Speed").get_value_or(1);
+    ts.sink = child.find("Sink") != child.not_found();
+    ts.min_damage = child.get_optional<ushort>("MinDamage").get_value_or(0);
+    ts.max_damage = child.get_optional<ushort>("MaxDamage").get_value_or(0);
+    return ts;
+};
+
+struct ProjectileStructure {
+    uint8_t id;
+    std::string object_id;
+    int damage;
+    float speed;
+    int size;
+    float lifetime_ms;
+    int max_damage;
+    int min_damage;
+    float magnitude;
+    float amplitude;
+    float frequency;
+    bool wavy;
+    bool parametric;
+    bool boomerang;
+    bool armor_piercing;
+    bool multi_hit;
+    bool passes_cover;
+    std::unordered_map<std::string, float> status_effects;
+};
+
+ProjectileStructure make_ProjectileStructure(boost::property_tree::ptree& child) {
+    ProjectileStructure ps;
+    ps.id = child.get_optional<uint8_t>("<xmlattr>.id").get_value_or(0);
+    ps.object_id = child.get_optional<std::string>("ObjectId").get_value_or("");
+    ps.damage = child.get_optional<int>("Damage").get_value_or(0);
+    ps.speed = child.get_optional<float>("Speed").get_value_or(0) / 10000.f;
+    ps.size = child.get_optional<int>("Size").get_value_or(0);
+    ps.lifetime_ms = child.get_optional<float>("LifetimeMS").get_value_or(0);
+    ps.min_damage = child.get_optional<ushort>("MinDamage").get_value_or(0);
+    ps.max_damage = child.get_optional<ushort>("MaxDamage").get_value_or(0);
+    ps.magnitude = child.get_optional<float>("Magnitude").get_value_or(0);
+    ps.amplitude = child.get_optional<float>("Amplitude").get_value_or(0);
+    ps.frequency = child.get_optional<float>("Frequency").get_value_or(0);
+    ps.wavy = child.find("Wavy") != child.not_found();
+    ps.parametric = child.find("Parametric") != child.not_found();
+    ps.boomerang = child.find("Boomerang") != child.not_found();
+    ps.armor_piercing = child.find("ArmorPiercing") != child.not_found();
+    ps.multi_hit = child.find("MultiHit") != child.not_found();
+    ps.passes_cover = child.find("PassesCover") != child.not_found();
+    for (auto &elem : child) {
+        if (elem.first == "ConditionEffect") {
+            float duration = elem.second.get_optional<float>("<xmlattr>.duration").get_value_or(0);
+            std::string effect_name = elem.second.data();
+            ps.status_effects.insert({effect_name, duration});
+        }
+    }
+    return ps;
+};
+
+struct PlayerStats {
+    int max_hp;
+    int max_mp;
+    int attack;
+    int defense;
+    int speed;
+    int dexterity;
+    int hp_regen;
+    int mp_regen;
+};
+
+struct ObjectStructure {
+    ushort type;
+    std::string id;
+    std::string class_;
+    ushort max_hit_points;
+    float xp_mult;
+    bool static_;
+    bool occupy_square;
+    bool enemy_occupy_square;
+    bool full_occupy;
+    bool blocks_sight;
+    bool protect_from_ground_damage;
+    bool protect_from_sink;
+    bool enemy;
+    bool player;
+    bool pet;
+    bool draw_on_ground;
+    ushort size;
+    ushort shadow_size;
+    ushort defense;
+    bool flying;
+    bool god;
+    bool cube;
+    bool quest;
+    bool item;
+    bool usable;
+    bool soulbound;
+    ushort mp_cost;
+    std::unordered_set<ProjectileStructure> projectiles;
+    bool invulnerable;
+    bool invincible;
+    PlayerStats player_stats;
+};
+
+ObjectStructure make_ObjectStructure(boost::property_tree::ptree &child) {
+    ObjectStructure os;
+    os.type = std::stoi(child.get_optional<std::string>("<xmlattr>.type").get_value_or("0x0"), nullptr, 0);
+    os.id = child.get_optional<std::string>("<xmlattr>.id").get_value_or("");
+    os.class_ = child.get_optional<std::string>("Class").get_value_or("GameObject");
+    os.max_hit_points = std::stoi(child.get_optional<std::string>("<xmlattr>.type").get_value_or("0x0"), nullptr, 0);
+    os.xp_mult = child.get_optional<float>("XpMult").get_value_or(0);
+    os.static_ = child.find("Static") != child.not_found();
+    os.occupy_square = child.find("OccupySquare") != child.not_found();
+    os.enemy_occupy_square = child.find("EnemyOccupySquare") != child.not_found();
+    os.full_occupy = child.find("FullOccupy") != child.not_found();
+    os.blocks_sight = child.find("BlocksSight") != child.not_found();
+    os.protect_from_ground_damage = child.find("ProtectFromGroundDamage") != child.not_found();
+    os.protect_from_sink = child.find("ProtectFromSink") != child.not_found();
+    os.enemy = child.find("Enemy") != child.not_found();
+    os.player = child.find("Player") != child.not_found();
+    os.pet = child.find("Pet") != child.not_found();
+    os.draw_on_ground = child.find("DrawOnGround") != child.not_found();
+    os.size = child.get_optional<ushort>("Size").get_value_or(0);
+    os.shadow_size = child.get_optional<ushort>("ShadowSize").get_value_or(0);
+    os.defense = child.get_optional<ushort>("Defense").get_value_or(0);
+    os.flying = child.find("Flying") != child.not_found();
+    os.god = child.find("God") != child.not_found();
+    os.cube = child.find("Cube") != child.not_found();
+    os.quest = child.find("Quest") != child.not_found();
+    os.invulnerable = child.find("Invulnerable") != child.not_found();
+    os.invincible = child.find("Invincible") != child.not_found();
+    os.item = child.find("Item") != child.not_found();
+    os.usable = child.find("Usable") != child.not_found();
+    os.soulbound = child.find("Soubound") != child.not_found();
+    os.mp_cost = child.get_optional<ushort>("MpCost").get_value_or(0);
+    for (auto &elem : child) {
+        if (elem.first == "Projectile") {
+            os.projectiles.insert(make_ProjectileStructure(elem.second));
+        }
+    }
+    if (os.player) {
+        os.player_stats.max_hp = child.get_child_optional("MaxHitPoints").map([](boost::property_tree::ptree &child_child) {
+            child_child.get_optional<int>("max");
+        }).get_value_or(0);
+        os.player_stats.max_mp = child.get_child_optional("MaxMagicPoints").map([](boost::property_tree::ptree &child_child) {
+            child_child.get_optional<int>("max");
+        }).get_value_or(0);
+        os.player_stats.attack = child.get_child_optional("Attack").map([](boost::property_tree::ptree &child_child) {
+            child_child.get_optional<int>("max");
+        }).get_value_or(0);
+        os.player_stats.defense = child.get_child_optional("Defense").map([](boost::property_tree::ptree &child_child) {
+            child_child.get_optional<int>("max");
+        }).get_value_or(0);
+        os.player_stats.speed = child.get_child_optional("Speed").map([](boost::property_tree::ptree &child_child) {
+            child_child.get_optional<int>("max");
+        }).get_value_or(0);
+        os.player_stats.dexterity = child.get_child_optional("Dexterity").map([](boost::property_tree::ptree &child_child) {
+            child_child.get_optional<int>("max");
+        }).get_value_or(0);
+        os.player_stats.hp_regen = child.get_child_optional("HpRegen").map([](boost::property_tree::ptree &child_child) {
+            child_child.get_optional<int>("max");
+        }).get_value_or(0);
+        os.player_stats.mp_regen = child.get_child_optional("MpRegen").map([](boost::property_tree::ptree &child_child) {
+            child_child.get_optional<int>("max");
+        }).get_value_or(0);
+    }
+}
+
+struct PacketStructure {
+    uint8_t id;
+};
+
+PacketStructure make_PacketStructure(boost::property_tree::ptree &ptree) {
+    return PacketStructure();
+    //no
+}
+
 int main()
 {
-    asio::io_context context;
-    /*asio::error_code ec;
-    asio::io_context context;
-    asio::ip::tcp::endpoint endpoint(asio::ip::make_address("127.0.0.1", ec), 2050);
-    asio::ip::tcp::socket socket(context);
-    socket.connect(endpoint, ec);
-
-    if (!ec) {
-        std::cout << "Connected" << std::endl;
-    } else {
-        std::cout << ec.message() << std::endl;
+    boost::property_tree::ptree ptree;
+    boost::property_tree::xml_parser::read_xml("test.xml", ptree);
+    for (auto &child : ptree.get_child("All").get_child("GroundTypes")) {
+        make_GroundStructure(child.second);
     }
+    make_ProjectileStructure(ptree.get_child("All").get_child("Projectile"));
 
-    if (socket.is_open()) {
-        read(socket);
-
-        std::string request = 
-            "GET /index.html HTTP/1.1\r\n"
-            "Host: example.com\r\n"
-            "Connection: close\r\n\r\n";
-
-        socket.write_some(asio::buffer(request.data(), request.size()), ec);
-
-        context.run();
-    }*/
+    asio::io_context context;
     signal(SIGINT, [](int) {
         std::cout << "Closing sockets" << std::endl;
         for (auto socket : sockets) {
