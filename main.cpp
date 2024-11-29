@@ -383,7 +383,6 @@ int main()
     auto finish = std::chrono::steady_clock::now();
     double elapsed_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(finish - start).count();
     std::cout << elapsed_seconds << '\n';
-    //make_ProjectileStructure(ptree.get_child("All").get_child("Projectile"));
 
     asio::io_context context;
     signal(SIGINT, [](int) {
